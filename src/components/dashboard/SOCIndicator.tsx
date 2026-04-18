@@ -63,7 +63,7 @@ export default function SOCIndicator({
     return '#22c55e'
   }
 
-  const voltageToLabel = (mv: number) => Math.round(mv).toString()
+  const voltageToLabel = (mv: number) => (mv / 1000).toFixed(3) + 'V'
 
   return (
     <div className="flex items-center justify-center w-full gap-8">

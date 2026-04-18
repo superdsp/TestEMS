@@ -1,41 +1,117 @@
-// Historical Page - Historical data and reports
+// Historical Page - Historical data with zoom support
 
-import { useState } from 'react'
-import { BarChart3, Calendar, Download, FileText } from 'lucide-react'
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { useState, useEffect, useCallback } from 'react'
+import { BarChart3, ZoomIn, RotateCcw } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Brush, ReferenceArea } from 'recharts'
 
-const generateDailyData = () => {
-  const data = []
-  for (let hour = 0; hour < 24; hour++) {
-    const pvPower = hour >= 6 && hour <= 18 ? Math.sin(((hour - 6) / 12) * Math.PI) * 8 + Math.random() * 2 : 0
-    const loadPower = 5 + Math.sin((hour / 24) * Math.PI * 2) * 2 + Math.random()
-    data.push({
-      hour: `${hour.toString().padStart(2, '0')}:00`,
-      pv: Math.max(0, pvPower),
-      load: loadPower,
-      grid: Math.random() * 3,
-    })
-  }
-  return data
+const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000'
+
+interface DataPoint {
+  timestamp: number
+  time: string
+  pv: number
+  battery: number
+  load: number
+  grid: number
 }
 
-const roomData = [
-  { name: 'Room 1', energy: 125.5 },
-  { name: 'Room 2', energy: 98.3 },
-  { name: 'Room 3', energy: 156.2 },
-  { name: 'Room 4', energy: 87.6 },
-  { name: 'Room 5', energy: 112.4 },
-  { name: 'Room 6', energy: 94.8 },
+const RANGE_OPTIONS = [
+  { value: 'day', label: '今天', aggregation: '10min' },
+  { value: 'week', label: '本周', aggregation: '30min' },
+  { value: 'month', label: '本月', aggregation: '2hour' },
+  { value: 'year', label: '本年', aggregation: 'day' },
+  { value: '3years', label: '3年', aggregation: 'week' },
 ]
 
 export default function HistoricalPage() {
-  const [dateRange, setDateRange] = useState('today')
-  const dailyData = generateDailyData()
+  const [data, setData] = useState<DataPoint[]>([])
+  const [loading, setLoading] = useState(false)
+  const [range, setRange] = useState('day')
+  const [leftRef, setLeftRef] = useState<number | null>(null)
+  const [rightRef, setRightRef] = useState<number | null>(null)
+  const [refAreaLeft, setRefAreaLeft] = useState<string>('')
+  const [refAreaRight, setRefAreaRight] = useState<string>('')
+  const [zoomMode, setZoomMode] = useState(false)
+  const [zoomData, setZoomData] = useState<DataPoint[]>([])
 
-  const totalPV = dailyData.reduce((sum, d) => sum + d.pv, 0).toFixed(1)
-  const totalLoad = dailyData.reduce((sum, d) => sum + d.load, 0).toFixed(1)
-  const totalGrid = dailyData.reduce((sum, d) => sum + d.grid, 0).toFixed(1)
-  const selfSufficiency = ((parseFloat(totalPV) / parseFloat(totalLoad)) * 100).toFixed(1)
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/history?range=${range}`)
+      const rawData = await res.json()
+      if (Array.isArray(rawData) && rawData.length > 0) {
+        const points: DataPoint[] = rawData.map((d: any) => ({
+          timestamp: d.timestamp,
+          time: new Date(d.timestamp).toLocaleString('zh-CN', {
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+          }),
+          pv: parseFloat(d.pv) || 0,
+          battery: parseFloat(d.battery) || 0,
+          load: parseFloat(d.load) || 0,
+          grid: parseFloat(d.grid) || 0,
+        }))
+        setData(points)
+        setZoomData(points)
+      } else {
+        setData([])
+        setZoomData([])
+      }
+    } catch (err) {
+      console.error('Failed to fetch history:', err)
+    }
+    setLoading(false)
+  }, [range])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
+
+  // Calculate totals
+  const totals = data.reduce((acc, d) => ({
+    pv: acc.pv + d.pv,
+    load: acc.load + d.load,
+    grid: acc.grid + d.grid,
+  }), { pv: 0, load: 0, grid: 0 })
+
+  const selfSufficiency = totals.load > 0 ? ((totals.pv / totals.load) * 100).toFixed(1) : '0.0'
+
+  // Zoom handlers
+  const handleMouseDown = (e: any) => {
+    if (e && e.activeLabel && zoomMode) {
+      setRefAreaLeft(e.activeLabel)
+    }
+  }
+
+  const handleMouseMove = (e: any) => {
+    if (refAreaLeft && e && e.activeLabel && zoomMode) {
+      setRefAreaRight(e.activeLabel)
+    }
+  }
+
+  const handleMouseUp = () => {
+    if (refAreaLeft && refAreaRight) {
+      const leftIndex = data.findIndex(d => d.time === refAreaLeft)
+      const rightIndex = data.findIndex(d => d.time === refAreaRight)
+      if (leftIndex !== -1 && rightIndex !== -1 && leftIndex < rightIndex) {
+        setZoomData(data.slice(leftIndex, rightIndex + 1))
+        setLeftRef(leftIndex)
+        setRightRef(rightIndex)
+      }
+    }
+    setRefAreaLeft('')
+    setRefAreaRight('')
+  }
+
+  const handleZoomOut = () => {
+    setZoomData(data)
+    setLeftRef(null)
+    setRightRef(null)
+  }
+
+  const displayData = zoomMode && zoomData.length > 0 ? zoomData : data
 
   return (
     <div className="space-y-6">
@@ -43,23 +119,39 @@ export default function HistoricalPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">历史数据</h1>
-          <p className="text-sm text-gray-500 mt-1">能量统计和报表</p>
+          <p className="text-sm text-gray-500 mt-1">滚动鼠标滚轮可缩放，拖拽选择区域可放大</p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1">
+            <button
+              onClick={() => setZoomMode(!zoomMode)}
+              className={`px-3 py-1.5 rounded text-sm flex items-center gap-1 transition-colors ${
+                zoomMode ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 text-gray-700'
+              }`}
+            >
+              <ZoomIn className="w-4 h-4" />
+              {zoomMode ? '退出缩放' : '缩放'}
+            </button>
+            <button
+              onClick={handleZoomOut}
+              className="px-3 py-1.5 rounded text-sm flex items-center gap-1 hover:bg-gray-100 text-gray-700 transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" />
+              重置
+            </button>
+          </div>
+
+          {/* Time Range */}
           <select
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
+            value={range}
+            onChange={(e) => setRange(e.target.value)}
             className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 shadow-sm"
           >
-            <option value="today">今天</option>
-            <option value="yesterday">昨天</option>
-            <option value="week">本周</option>
-            <option value="month">本月</option>
+            {RANGE_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
           </select>
-          <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-2 shadow-sm">
-            <Download className="w-4 h-4" />
-            导出数据
-          </button>
         </div>
       </div>
 
@@ -68,19 +160,19 @@ export default function HistoricalPage() {
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
           <p className="text-sm text-gray-500">光伏发电量</p>
           <p className="text-2xl font-bold text-green-600 mt-1">
-            {totalPV} <span className="text-sm font-normal text-gray-500">kWh</span>
+            {totals.pv.toFixed(1)} <span className="text-sm font-normal text-gray-500">kWh</span>
           </p>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
           <p className="text-sm text-gray-500">总用电量</p>
           <p className="text-2xl font-bold text-red-600 mt-1">
-            {totalLoad} <span className="text-sm font-normal text-gray-500">kWh</span>
+            {totals.load.toFixed(1)} <span className="text-sm font-normal text-gray-500">kWh</span>
           </p>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
           <p className="text-sm text-gray-500">电网用电量</p>
           <p className="text-2xl font-bold text-yellow-600 mt-1">
-            {totalGrid} <span className="text-sm font-normal text-gray-500">kWh</span>
+            {totals.grid.toFixed(1)} <span className="text-sm font-normal text-gray-500">kWh</span>
           </p>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
@@ -91,95 +183,87 @@ export default function HistoricalPage() {
         </div>
       </div>
 
-      {/* Daily Power Profile */}
+      {/* Main Chart */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <div className="flex items-center gap-3 mb-4">
-          <BarChart3 className="w-5 h-5 text-blue-600" />
-          <h2 className="font-semibold text-gray-800">24小时功率曲线</h2>
-        </div>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={dailyData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="hour" stroke="#6b7280" fontSize={10} interval={3} />
-              <YAxis stroke="#6b7280" fontSize={12} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                }}
-              />
-              <Legend />
-              <Line type="monotone" dataKey="pv" stroke="#22c55e" strokeWidth={2} dot={false} name="光伏" />
-              <Line type="monotone" dataKey="load" stroke="#ef4444" strokeWidth={2} dot={false} name="负载" />
-              <Line type="monotone" dataKey="grid" stroke="#eab308" strokeWidth={2} dot={false} name="电网" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Room Energy Ranking */}
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3 mb-4">
-            <Calendar className="w-5 h-5 text-blue-600" />
-            <h2 className="font-semibold text-gray-800">房间用电排名</h2>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <BarChart3 className="w-5 h-5 text-blue-600" />
+            <h2 className="font-semibold text-gray-800">功率曲线 {zoomMode && zoomData.length > 0 && `(${zoomData.length} 个数据点)`}</h2>
           </div>
-          <div className="h-64">
+          {zoomMode && (
+            <span className="text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+              点击并拖拽选择区域进行放大
+            </span>
+          )}
+        </div>
+
+        {loading ? (
+          <div className="h-80 flex items-center justify-center text-gray-400">
+            加载中...
+          </div>
+        ) : displayData.length === 0 ? (
+          <div className="h-80 flex items-center justify-center text-gray-400">
+            暂无数据
+          </div>
+        ) : (
+          <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={roomData} layout="vertical">
+              <LineChart
+                data={displayData}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis type="number" stroke="#6b7280" fontSize={12} />
-                <YAxis dataKey="name" type="category" stroke="#6b7280" fontSize={12} width={60} />
+                <XAxis
+                  dataKey="time"
+                  stroke="#6b7280"
+                  fontSize={10}
+                  interval="preserveStartEnd"
+                  minTickGap={50}
+                />
+                <YAxis stroke="#6b7280" fontSize={12} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: '#ffffff',
                     border: '1px solid #e2e8f0',
                     borderRadius: '8px',
                   }}
+                  labelFormatter={(label) => `时间: ${label}`}
                 />
-                <Bar dataKey="energy" fill="#3b82f6" radius={[0, 4, 4, 0]} name="用电量 (kWh)" />
-              </BarChart>
+                <Legend />
+                <Line type="monotone" dataKey="pv" stroke="#22c55e" strokeWidth={2} dot={false} name="光伏 (kW)" />
+                <Line type="monotone" dataKey="battery" stroke="#f59e0b" strokeWidth={2} dot={false} name="储能 (kW)" />
+                <Line type="monotone" dataKey="load" stroke="#ef4444" strokeWidth={2} dot={false} name="负载 (kW)" />
+                <Line type="monotone" dataKey="grid" stroke="#eab308" strokeWidth={2} dot={false} name="电网 (kW)" />
+                {refAreaLeft && refAreaRight && (
+                  <ReferenceArea
+                    x1={refAreaLeft}
+                    x2={refAreaRight}
+                    strokeOpacity={0.3}
+                    fill="#3b82f6"
+                    fillOpacity={0.2}
+                  />
+                )}
+                <Brush
+                  dataKey="time"
+                  height={30}
+                  stroke="#3b82f6"
+                  fill="#f8fafc"
+                  startIndex={leftRef || 0}
+                  endIndex={rightRef || displayData.length - 1}
+                />
+              </LineChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        )}
+      </div>
 
-        {/* Report Generation */}
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3 mb-4">
-            <FileText className="w-5 h-5 text-blue-600" />
-            <h2 className="font-semibold text-gray-800">报表生成</h2>
-          </div>
-          <div className="space-y-4">
-            <button className="w-full p-4 bg-gray-50 hover:bg-gray-100 rounded-lg text-left transition-colors">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-800">日报</p>
-                  <p className="text-sm text-gray-500">每日能量统计报表</p>
-                </div>
-                <FileText className="w-5 h-5 text-gray-400" />
-              </div>
-            </button>
-            <button className="w-full p-4 bg-gray-50 hover:bg-gray-100 rounded-lg text-left transition-colors">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-800">周报</p>
-                  <p className="text-sm text-gray-500">每周能量统计报表</p>
-                </div>
-                <FileText className="w-5 h-5 text-gray-400" />
-              </div>
-            </button>
-            <button className="w-full p-4 bg-gray-50 hover:bg-gray-100 rounded-lg text-left transition-colors">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-800">月报</p>
-                  <p className="text-sm text-gray-500">每月能量统计报表</p>
-                </div>
-                <FileText className="w-5 h-5 text-gray-400" />
-              </div>
-            </button>
-          </div>
+      {/* Data Info */}
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+        <div className="flex items-center justify-between text-sm text-gray-500">
+          <span>共 {data.length} 个数据点</span>
+          <span>时间范围: {data.length > 0 ? `${data[0].time} 至 ${data[data.length - 1].time}` : '无数据'}</span>
         </div>
       </div>
     </div>

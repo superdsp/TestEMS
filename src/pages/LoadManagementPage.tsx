@@ -167,7 +167,7 @@ export default function LoadManagementPage() {
               <p className="text-sm text-gray-500">今日总用电</p>
               <p className="text-xl font-bold text-gray-800">
                 {(
-                  (snapshot?.rooms.reduce((sum, r) => sum + r.energyKWh, 0) || 0)
+                  (snapshot?.rooms.reduce((sum, r) => sum + (r.energyKWh || 0), 0) || 0)
                 ).toFixed(2)}{' '}
                 <span className="text-sm font-normal text-gray-500">kWh</span>
               </p>
@@ -322,7 +322,7 @@ function RoomCard({ room, rank, isSelected, onToggle, onSelect }: RoomCardProps)
           <span className="text-sm text-gray-500">kW</span>
         </div>
         <p className="text-xs text-gray-500 mt-1">
-          今日用电: {room.energyKWh.toFixed(2)} kWh
+          今日用电: {(room.energyKWh || 0).toFixed(2)} kWh
         </p>
       </div>
 

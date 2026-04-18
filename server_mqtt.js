@@ -32,7 +32,11 @@ async function initDatabase() {
 }
 
 // ===== Simulation Config =====
+<<<<<<< Updated upstream
 const SPEED_MULTIPLIER = 24;
+=======
+const SPEED_MULTIPLIER = 3600;  // 1 real second = 1 simulated hour
+>>>>>>> Stashed changes
 const PEAK_PV_KW = 10;
 
 const ROOM_CONFIGS = [
@@ -268,6 +272,19 @@ function connectMQTT() {
 function updateFromMQTT(topic, payload) {
   dataMode = 'mqtt';
 
+<<<<<<< Updated upstream
+=======
+  // 处理模拟时间
+  if (topic === 'ems/simtime') {
+    if (payload.simHour !== undefined && payload.simDay !== undefined) {
+      const day = payload.simDay || 1;
+      const hour = payload.simHour;
+      simDayCounter = (day - 1) * 24 + hour;  // 转换为小时
+    }
+    return;
+  }
+
+>>>>>>> Stashed changes
   if (topic === 'ems/pv' || topic.startsWith('ems/pv/')) {
     if (payload.powerKW !== undefined) simState.pv.powerKW = payload.powerKW;
     if (payload.voltage !== undefined) simState.pv.voltage = payload.voltage;
@@ -296,6 +313,31 @@ function updateFromMQTT(topic, payload) {
     }
   }
 
+<<<<<<< Updated upstream
+=======
+  // 处理 ems/battery/bms 独立topic
+  if (topic === 'ems/battery/bms') {
+    const bms = simState.battery.bms;
+    if (payload.cellCount) bms.cellCount = payload.cellCount;
+    if (payload.stringCount) bms.stringCount = payload.stringCount;
+    if (payload.voltages) bms.voltages = payload.voltages;
+    if (payload.socValues) bms.socValues = payload.socValues;
+    if (payload.temps) bms.temps = payload.temps;
+    if (payload.balanceStatus) bms.balanceStatus = payload.balanceStatus;
+    if (payload.balanceDutyCycle) bms.balanceDutyCycle = payload.balanceDutyCycle;
+    if (payload.maxCellDeltaMV !== undefined) bms.maxCellDeltaMV = payload.maxCellDeltaMV;
+    if (payload.avgVoltage !== undefined) bms.avgVoltage = payload.avgVoltage;
+    if (payload.totalVoltage !== undefined) bms.totalVoltage = payload.totalVoltage;
+  }
+
+  // 处理 ems/pcs topic
+  if (topic === 'ems/pcs' || topic.startsWith('ems/pcs/')) {
+    if (payload.status !== undefined) simState.pcs.status = payload.status;
+    if (payload.powerKW !== undefined) simState.pcs.powerKW = payload.powerKW;
+    if (payload.efficiency !== undefined) simState.pcs.efficiency = payload.efficiency;
+  }
+
+>>>>>>> Stashed changes
   if (topic === 'ems/grid' || topic.startsWith('ems/grid/')) {
     if (payload.powerKW !== undefined) simState.grid.powerKW = payload.powerKW;
     if (payload.voltage !== undefined) simState.grid.voltage = payload.voltage;
@@ -311,6 +353,7 @@ function updateFromMQTT(topic, payload) {
     }
   }
 
+<<<<<<< Updated upstream
   // Recalculate balance
   const totalLoad = simState.rooms.reduce((sum, r) => sum + r.powerKW, 0);
   simState.balance.totalLoadKW = totalLoad;
@@ -318,6 +361,45 @@ function updateFromMQTT(topic, payload) {
   simState.balance.batteryPowerKW = batteryState.powerKW;
   simState.balance.gridPowerKW = totalLoad - simState.pv.powerKW - batteryState.powerKW;
   simState.grid.powerKW = simState.balance.gridPowerKW;
+=======
+  if (topic === 'ems/balance' || topic.startsWith('ems/balance/')) {
+    if (payload.totalLoadKW !== undefined) simState.balance.totalLoadKW = payload.totalLoadKW;
+    if (payload.pvPowerKW !== undefined) simState.balance.pvPowerKW = payload.pvPowerKW;
+    if (payload.batteryPowerKW !== undefined) {
+      simState.balance.batteryPowerKW = payload.batteryPowerKW;
+    }
+    if (payload.gridPowerKW !== undefined) {
+      simState.balance.gridPowerKW = payload.gridPowerKW;
+      simState.grid.powerKW = payload.gridPowerKW;
+    }
+    if (payload.systemEfficiency !== undefined) simState.balance.systemEfficiency = payload.systemEfficiency;
+  }
+
+  // 如果没有收到 pcs 数据，根据 battery.powerKW 计算
+  if (!simState.pcs || simState.pcs.powerKW === 0) {
+    if (batteryState.powerKW > 0) {
+      // 放电: DC→AC
+      simState.pcs = {
+        status: 'discharging',
+        powerKW: batteryState.powerKW * 0.95,
+        efficiency: 0.95
+      };
+    } else if (batteryState.powerKW < 0) {
+      // 充电: AC→DC
+      simState.pcs = {
+        status: 'charging',
+        powerKW: batteryState.powerKW / 0.95,
+        efficiency: 0.95
+      };
+    } else {
+      simState.pcs = {
+        status: 'idle',
+        powerKW: 0,
+        efficiency: 0.95
+      };
+    }
+  }
+>>>>>>> Stashed changes
 }
 
 // ===== Simulation Update =====
@@ -325,6 +407,7 @@ let lastUpdateTime = Date.now();
 let simDayCounter = 0;
 
 function updateSimulation() {
+<<<<<<< Updated upstream
   if (dataMode === 'mqtt') return; // Skip simulation if receiving MQTT data
 
   const now = Date.now();
@@ -334,6 +417,24 @@ function updateSimulation() {
 
   const simHour = (simDayCounter % 24000) / 1000;
   simDayCounter += dtMs * SPEED_MULTIPLIER;
+=======
+  const now = Date.now();
+  const dtMs = now - lastUpdateTime;
+  lastUpdateTime = now;
+
+  let dtHours = 0;
+
+  // Only update simDayCounter from real time in simulation mode
+  // In mqtt mode, simDayCounter is set from MQTT messages
+  if (dataMode !== 'mqtt') {
+    dtHours = dtMs / 3600000 * SPEED_MULTIPLIER;
+    simDayCounter += dtHours;
+  }
+
+  if (dataMode === 'mqtt') return; // Skip simulation model if receiving MQTT data
+
+  const simHour = (simDayCounter % 24);
+>>>>>>> Stashed changes
 
   const realDate = new Date();
   const dayOfWeek = realDate.getDay();
@@ -416,6 +517,7 @@ async function storeToDatabase() {
 
 // ===== API Routes =====
 app.get('/api/simulation', (req, res) => {
+<<<<<<< Updated upstream
   res.json({ timestamp: Date.now(), source: dataMode, ...simState });
 });
 
@@ -423,15 +525,71 @@ app.get('/api/realtime', (req, res) => {
   res.json({ timestamp: Date.now(), source: dataMode, ...simState, rooms: simState.rooms });
 });
 
+=======
+  res.json({ timestamp: Date.now(), source: dataMode, simTime: getSimTime(), ...simState });
+});
+
+app.get('/api/realtime', (req, res) => {
+  res.json({ timestamp: Date.now(), source: dataMode, simTime: getSimTime(), ...simState, rooms: simState.rooms });
+});
+
+function getSimTime() {
+  const totalHours = simDayCounter;  // simDayCounter is in simulated hours now
+  const day = Math.floor(totalHours / 24) + 1;
+  const hour = Math.floor(totalHours % 24);
+  const minute = Math.floor((totalHours % 1) * 60);
+  const second = Math.floor(((totalHours % 1) * 60 % 1) * 60);
+  return { day, hour, minute, second, hourStr: `${hour.toString().padStart(2,'0')}:${minute.toString().padStart(2,'0')}:${second.toString().padStart(2,'0')}` };
+}
+
+>>>>>>> Stashed changes
 app.get('/api/history', async (req, res) => {
   const range = req.query.range || 'day';
   try {
     const conn = await pool.getConnection();
+<<<<<<< Updated upstream
     const interval = range === 'week' ? '7 DAY' : range === 'month' ? '30 DAY' : range === 'year' ? '365 DAY' : '1 DAY';
     const [rows] = await conn.query('SELECT recorded_at as timestamp, AVG(pv_power_kw) as pv, AVG(battery_soc) as battery, AVG(load_power_kw) as load, AVG(grid_power_kw) as grid FROM energy_balance WHERE recorded_at > DATE_SUB(NOW(), INTERVAL ' + interval + ') GROUP BY HOUR(recorded_at), MINUTE(recorded_at) DIV 10 ORDER BY recorded_at');
     conn.release();
     res.json(rows);
   } catch (err) { res.json([]); }
+=======
+    let interval, groupBy, orderBy;
+
+    switch (range) {
+      case 'week':
+        interval = '7 DAY';
+        groupBy = 'HOUR(recorded_at), MINUTE(recorded_at) DIV 30';
+        orderBy = 'MIN(recorded_at)';
+        break;
+      case 'month':
+        interval = '30 DAY';
+        groupBy = 'HOUR(recorded_at) DIV 2, DAY(recorded_at)';
+        orderBy = 'MIN(recorded_at)';
+        break;
+      case 'year':
+        interval = '365 DAY';
+        groupBy = 'DAY(recorded_at)';
+        orderBy = 'MIN(recorded_at)';
+        break;
+      case '3years':
+        interval = '1095 DAY';
+        groupBy = 'WEEK(recorded_at), YEAR(recorded_at)';
+        orderBy = 'MIN(recorded_at)';
+        break;
+      default: // day
+        interval = '1 DAY';
+        groupBy = 'HOUR(recorded_at), MINUTE(recorded_at) DIV 10';
+        orderBy = 'MIN(recorded_at)';
+    }
+
+    const [rows] = await conn.query(
+      'SELECT UNIX_TIMESTAMP(MIN(recorded_at)) * 1000 as timestamp, AVG(pv_power_kw) as pv, AVG(battery_power_kw) as battery, AVG(`load_power_kw`) as `load`, AVG(grid_power_kw) as grid FROM energy_balance WHERE recorded_at > DATE_SUB(NOW(), INTERVAL ' + interval + ') GROUP BY ' + groupBy + ' ORDER BY ' + orderBy
+    );
+    conn.release();
+    res.json(rows);
+  } catch (err) { console.error('History error:', err.message); res.json([]); }
+>>>>>>> Stashed changes
 });
 
 app.get('/api/bms/cells', async (req, res) => { try { const conn = await pool.getConnection(); const [rows] = await conn.query('SELECT * FROM bms_cell_data ORDER BY recorded_at DESC LIMIT 64'); conn.release(); res.json(rows); } catch (err) { res.json([]); } });

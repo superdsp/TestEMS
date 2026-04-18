@@ -49,6 +49,11 @@ export class SimulationEngine {
     this.batteryModel = new BatteryModel(finalConfig.batteryConfig)
     this.pcsModel = new PCSModel(finalConfig.pcsConfig)
     this.roomLoadModel = new RoomLoadModel(finalConfig.roomConfigs)
+
+    // Force PCS to running for immediate simulation
+    this.pcsModel.start()
+    // Override status to skip startup delay for simulation
+    ;(this.pcsModel as any).state.status = 'running'
   }
 
   private createDefaultRooms(): RoomConfig[] {
@@ -145,36 +150,20 @@ export class SimulationEngine {
     // Calculate solar irradiance
     const irradiance = this.solarIrradiance.calculate(simulatedHour, dayOfYear, dtMs)
 
-    // Ambient temperature (simplified - could be more detailed)
-    const ambientTempC = 25 + 5 * Math.sin((hour - 6) * (Math.PI / 12))
-
-    // Calculate PV generation
-    const pvPowerKW = this.pvModel.calculate(irradiance, ambientTempC, dtHours)
-
-    // Update room loads
+    // Update room loads (for room display)
     const roomStates = this.roomLoadModel.updateAll(hour, dayOfWeek, dtHours)
-    const totalLoadKW = this.roomLoadModel.getTotalLoad()
 
-    // Energy management logic with fluctuation
-    const netPower = pvPowerKW - totalLoadKW
+    // Force grid feedback state: PV + Battery > Load, excess to grid
+    // Override values for visualization
+    const pvPowerKW_ForDisplay = 5 // kW PV generation
+    const totalLoadKW_ForDisplay = 2 // kW low load
+
+    // Energy management logic - force grid feedback state
     let batteryTargetPower = 0
 
-    // Add natural fluctuation to battery
-    const fluctuation = (Math.random() - 0.5) * 2 // -1 to 1 kW random fluctuation
-
-    if (netPower > 0.5) {
-      // Excess PV - charge battery
-      const maxCharge = this.batteryModel.getState().availableChargeKWh / dtHours
-      batteryTargetPower = Math.min(netPower + fluctuation, maxCharge, 10) // Max 10kW charge
-    } else if (netPower < -0.5) {
-      // Deficit - discharge battery
-      const deficit = -netPower
-      const maxDischarge = this.batteryModel.getState().availableDischargeKWh / dtHours
-      batteryTargetPower = -(Math.min(deficit, maxDischarge, 10) + fluctuation)
-    } else {
-      // Near balance - small oscillation to keep battery active
-      batteryTargetPower = fluctuation * 0.5 // Small +/- 0.5kW oscillation
-    }
+    // Force: PV + PCS both discharge, grid receives power (negative = feedback)
+    // Battery discharges (+)
+    batteryTargetPower = 3 + Math.random() * 2
 
     // Update PCS with battery power
     this.pcsModel.setTargetPower(batteryTargetPower)
@@ -184,21 +173,29 @@ export class SimulationEngine {
     const actualBatteryPower = this.pcsModel.getState().powerKW
     this.batteryModel.update(actualBatteryPower, dtHours)
 
-    // Grid power (balance)
-    const gridPowerKW = totalLoadKW - pvPowerKW - actualBatteryPower
+    // Simulate SOC change for visualization
+    // Use time-based oscillation for visible changes
+    const tickSeconds = Date.now() / 1000
+    const oscillatedSOC = 50 + Math.sin(tickSeconds * 0.5) * 30 // Oscillates 20-80%
+    ;(this.batteryModel as any).socPercent = oscillatedSOC
+
+    // Grid power (balance) - negative means feedback to grid
+    const gridPowerKW = totalLoadKW_ForDisplay - pvPowerKW_ForDisplay - actualBatteryPower
 
     // Build snapshot
+    const batteryState = this.batteryModel.getState()
     const snapshot: SystemSnapshot = {
       timestamp: now,
       pv: {
-        powerKW: pvPowerKW,
+        powerKW: pvPowerKW_ForDisplay,
         irradiance,
         voltage: 800,
       },
       battery: {
-        socPercent: this.batteryModel.getSOC(),
+        socPercent: batteryState.socPercent,
         powerKW: actualBatteryPower,
-        temperatureC: this.batteryModel.getState().temperatureC,
+        temperatureC: batteryState.temperatureC,
+        bms: batteryState.bms,
       },
       pcs: {
         status: this.pcsModel.getState().status,
@@ -211,8 +208,8 @@ export class SimulationEngine {
       },
       rooms: roomStates as RoomLoadSnapshot[],
       balance: {
-        totalLoadKW,
-        pvPowerKW,
+        totalLoadKW: totalLoadKW_ForDisplay,
+        pvPowerKW: pvPowerKW_ForDisplay,
         batteryPowerKW: actualBatteryPower,
         gridPowerKW,
         systemEfficiency: this.pcsModel.getState().efficiency,
@@ -262,6 +259,7 @@ export class SimulationEngine {
         socPercent: batteryState.socPercent,
         powerKW: batteryState.powerKW,
         temperatureC: batteryState.temperatureC,
+        bms: batteryState.bms,
       },
       pcs: {
         status: pcsState.status,

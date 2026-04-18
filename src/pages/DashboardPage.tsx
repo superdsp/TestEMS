@@ -11,6 +11,7 @@ const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000'
 
 interface DataPoint {
   time: string
+  timestamp: number
   pv: number
   battery: number
   load: number
@@ -19,42 +20,65 @@ interface DataPoint {
 
 export default function DashboardPage() {
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null)
-  const [history, setHistory] = useState<DataPoint[]>([])
+  const [chartData, setChartData] = useState<DataPoint[]>([])
+  const lastFetchRef = { current: 0 }
 
   useEffect(() => {
-    // Fetch data from remote backend
+    // Fetch 24-hour history from database
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/history?range=day`)
+        const data = await res.json()
+        if (Array.isArray(data) && data.length > 0) {
+          const historyPoints: DataPoint[] = data.map((d: any) => ({
+            time: new Date(d.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+            timestamp: d.timestamp,
+            pv: d.pv || 0,
+            battery: d.battery || 0,
+            load: d.load || 0,
+            grid: d.grid || 0,
+          }))
+          setChartData(historyPoints)
+        }
+      } catch (err) {
+        console.error('Failed to fetch history:', err)
+      }
+    }
+
+    fetchHistory()
+
+    // Fetch realtime data every second
     const fetchData = async () => {
       try {
         const res = await fetch(`${API_BASE}/api/simulation`)
         const data = await res.json()
         setSnapshot(data)
 
-        // Update history for chart
-        const now = new Date()
-        const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        setHistory(prev => {
+        // Only add if enough time has passed (1 simulated hour = 1 real minute)
+        const now = Date.now()
+        if (now - lastFetchRef.current >= 60000) {
+          lastFetchRef.current = now
+          const timeStr = data.simTime?.hourStr?.substring(0, 5) || `${String(data.simTime?.hour || 0).padStart(2,'0')}:00`
           const newPoint: DataPoint = {
             time: timeStr,
+            timestamp: now,
             pv: data.pv.powerKW,
             battery: data.battery.powerKW,
             load: data.balance.totalLoadKW,
             grid: data.grid.powerKW,
           }
-          const updated = [...prev, newPoint]
-          // Keep last 60 points (1 minute of data at 1s interval)
-          return updated.slice(-60)
-        })
+          setChartData(prev => {
+            const updated = [...prev, newPoint]
+            // Keep only 1440 points (24 hours at 1/min)
+            return updated.slice(-1440)
+          })
+        }
       } catch (err) {
         console.error('Failed to fetch simulation data:', err)
       }
     }
 
-    // Initial fetch
-    fetchData()
-
-    // Poll every second
     const interval = setInterval(fetchData, 1000)
-
     return () => clearInterval(interval)
   }, [])
 
@@ -63,7 +87,12 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">能源管理仪表盘</h1>
+          <h1 className="text-2xl font-bold text-gray-800">
+            能源管理仪表盘
+            {snapshot?.simTime && (
+              <span className="text-green-600 ml-2">第{snapshot.simTime.day}天 {snapshot.simTime.hour}时</span>
+            )}
+          </h1>
           <p className="text-sm text-gray-500 mt-1">实时监控光伏、储能、负载运行状态</p>
         </div>
       </div>
@@ -151,63 +180,43 @@ export default function DashboardPage() {
                       ? '放电中'
                       : '待机'}
                   </span>
-                  <span className="ml-2 text-gray-400">|</span>
-                  <span className={
-                    snapshot.battery.bms.sohPercent >= 95
-                      ? 'text-green-500 ml-2'
-                      : snapshot.battery.bms.sohPercent >= 85
-                      ? 'text-green-500 ml-2'
-                      : snapshot.battery.bms.sohPercent >= 70
-                      ? 'text-yellow-500 ml-2'
-                      : 'text-red-500 ml-2'
-                  }>
-                    {snapshot.battery.bms.sohPercent >= 95
-                      ? '电池很健康'
-                      : snapshot.battery.bms.sohPercent >= 85
-                      ? '状态良好'
-                      : snapshot.battery.bms.sohPercent >= 70
-                      ? '略有衰减'
-                      : '需要维护'}
-                  </span>
                 </span>
               )}
             </h3>
-            <div className="flex justify-center items-center h-full">
-              <SOCIndicator
-                socPercent={snapshot?.battery.socPercent || 0}
-                status={
-                  (snapshot?.battery.powerKW || 0) > 0.1
-                    ? 'charging'
-                    : (snapshot?.battery.powerKW || 0) < -0.1
-                    ? 'discharging'
-                    : 'idle'
-                }
-                size="lg"
-                bms={snapshot?.battery.bms}
-              />
-            </div>
+            <SOCIndicator
+              socPercent={snapshot?.battery.socPercent || 0}
+              bms={snapshot?.battery.bms}
+            />
           </div>
         </div>
       </div>
 
-      {/* 24 Hour Realtime Chart */}
+      {/* Power Chart */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <h3 className="text-sm font-semibold text-gray-600 mb-4">24小时实时数据</h3>
+        <h3 className="text-sm font-semibold text-gray-600 mb-4">24小时功率曲线</h3>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={history}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 10 }} width={35} />
-              <Tooltip
-                contentStyle={{ fontSize: 11 }}
-                labelFormatter={(label) => `时间: ${label}`}
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis
+                dataKey="time"
+                stroke="#6b7280"
+                fontSize={12}
+                tickLine={false}
               />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="pv" stroke="#22c55e" strokeWidth={2} dot={false} name="光伏(kW)" />
-              <Line type="monotone" dataKey="battery" stroke="#f97316" strokeWidth={2} dot={false} name="储能(kW)" />
-              <Line type="monotone" dataKey="load" stroke="#ef4444" strokeWidth={2} dot={false} name="负载(kW)" />
-              <Line type="monotone" dataKey="grid" stroke="#eab308" strokeWidth={2} dot={false} name="电网(kW)" />
+              <YAxis stroke="#6b7280" fontSize={12} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                }}
+              />
+              <Legend />
+              <Line type="monotone" dataKey="pv" name="光伏(kW)" stroke="#22c55e" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="battery" name="储能(kW)" stroke="#f59e0b" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="load" name="负载(kW)" stroke="#ef4444" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="grid" name="电网(kW)" stroke="#eab308" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>

@@ -117,8 +117,18 @@ export interface RoomLoadSnapshot {
   breakerStatus: 'closed' | 'open'
 }
 
+export interface SimTime {
+  day: number
+  hour: number
+  minute: number
+  second: number
+  hourStr: string
+}
+
 export interface SystemSnapshot {
   timestamp: number
+  source?: string
+  simTime?: SimTime
   pv: {
     powerKW: number
     irradiance: number

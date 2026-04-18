@@ -96,4 +96,5 @@ Supabase PostgreSQL，Schema 定义在 `supabase/migrations/001_initial_schema.s
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
+
 ```

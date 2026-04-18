@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
-import { LayoutDashboard, Settings, Building2, Activity, Bell, BarChart3, ChevronRight } from 'lucide-react'
+import { LayoutDashboard, Building2, Activity, Bell, BarChart3, ChevronRight } from 'lucide-react'
 
 const navItems = [
   { path: '/dashboard', label: '仪表盘', icon: LayoutDashboard },
-  { path: '/controls', label: '控制', icon: Settings },
   { path: '/loads', label: '负载管理', icon: Building2 },
   { path: '/monitoring', label: '监控', icon: Activity },
   { path: '/alarms', label: '报警', icon: Bell },
