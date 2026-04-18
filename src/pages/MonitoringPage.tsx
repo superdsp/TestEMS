@@ -1,39 +1,38 @@
 // Monitoring Page - Real-time telemetry data
 
-import { useState, useEffect, useRef } from 'react'
-import { SimulationEngine } from '../simulation'
+import { useState, useEffect } from 'react'
 import type { SystemSnapshot } from '../lib/types'
 import { Activity, TrendingUp } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+
+const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000'
 
 export default function MonitoringPage() {
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null)
   const [isRunning, setIsRunning] = useState(true)
   const [history, setHistory] = useState<SystemSnapshot[]>([])
-  const engineRef = useRef<SimulationEngine | null>(null)
 
   useEffect(() => {
-    engineRef.current = new SimulationEngine()
-    engineRef.current.onTick((newSnapshot) => {
-      setSnapshot(newSnapshot)
-      setHistory((prev) => {
-        const updated = [...prev, newSnapshot]
-        return updated.slice(-60)
-      })
-    })
-    setSnapshot(engineRef.current.getSnapshot())
+    if (!isRunning) return
 
-    return () => {
-      engineRef.current?.stop()
+    const fetchData = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/simulation`)
+        const data = await res.json()
+        setSnapshot(data)
+        setHistory((prev) => {
+          const updated = [...prev, data]
+          return updated.slice(-60)
+        })
+      } catch (err) {
+        console.error('Failed to fetch:', err)
+      }
     }
-  }, [])
 
-  useEffect(() => {
-    if (isRunning) {
-      engineRef.current?.start()
-    } else {
-      engineRef.current?.stop()
-    }
+    fetchData()
+    const interval = setInterval(fetchData, 1000)
+
+    return () => clearInterval(interval)
   }, [isRunning])
 
   const chartData = history.map((s, i) => ({

@@ -1,32 +1,61 @@
 // Dashboard Page - Main dashboard view with energy flow diagram
 
-import { useState, useEffect, useRef } from 'react'
-import { SimulationEngine } from '../simulation'
+import { useState, useEffect } from 'react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import type { SystemSnapshot } from '../lib/types'
 import EnergyFlowDiagram from '../components/dashboard/EnergyFlowDiagram'
 import PowerGauge from '../components/dashboard/PowerGauge'
 import SOCIndicator from '../components/dashboard/SOCIndicator'
-import SystemStatusCard from '../components/dashboard/SystemStatusCard'
+
+const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000'
+
+interface DataPoint {
+  time: string
+  pv: number
+  battery: number
+  load: number
+  grid: number
+}
 
 export default function DashboardPage() {
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null)
-  const engineRef = useRef<SimulationEngine | null>(null)
+  const [history, setHistory] = useState<DataPoint[]>([])
 
   useEffect(() => {
-    engineRef.current = new SimulationEngine()
+    // Fetch data from remote backend
+    const fetchData = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/simulation`)
+        const data = await res.json()
+        setSnapshot(data)
 
-    engineRef.current.onTick((newSnapshot) => {
-      setSnapshot(newSnapshot)
-    })
-
-    setSnapshot(engineRef.current.getSnapshot())
-
-    // Auto-start simulation
-    engineRef.current.start()
-
-    return () => {
-      engineRef.current?.stop()
+        // Update history for chart
+        const now = new Date()
+        const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        setHistory(prev => {
+          const newPoint: DataPoint = {
+            time: timeStr,
+            pv: data.pv.powerKW,
+            battery: data.battery.powerKW,
+            load: data.balance.totalLoadKW,
+            grid: data.grid.powerKW,
+          }
+          const updated = [...prev, newPoint]
+          // Keep last 60 points (1 minute of data at 1s interval)
+          return updated.slice(-60)
+        })
+      } catch (err) {
+        console.error('Failed to fetch simulation data:', err)
+      }
     }
+
+    // Initial fetch
+    fetchData()
+
+    // Poll every second
+    const interval = setInterval(fetchData, 1000)
+
+    return () => clearInterval(interval)
   }, [])
 
   return (
@@ -51,7 +80,7 @@ export default function DashboardPage() {
           {/* Quick Stats */}
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 flex-1">
             <h3 className="text-sm font-semibold text-gray-600 mb-4">功率概览</h3>
-            <div className="flex justify-around items-center h-full">
+            <div className="flex justify-around items-center">
               <PowerGauge
                 value={snapshot?.pv.powerKW || 0}
                 maxValue={10}
@@ -74,15 +103,78 @@ export default function DashboardPage() {
                 size="md"
               />
             </div>
+
+            {/* Room Power Bars */}
+            <div className="border-t border-gray-200 pt-4 mt-4">
+              <h4 className="text-xs font-medium text-gray-500 mb-3">房间负载</h4>
+              <div className="flex items-end justify-between gap-1">
+                {snapshot?.rooms?.slice(0, 6).map((room) => {
+                  const maxRoomPower = 8
+                  const heightPercent = Math.min(100, (room.powerKW / maxRoomPower) * 100)
+                  return (
+                    <div key={room.roomId} className="flex flex-col items-center flex-1 min-w-0">
+                      <div className="w-5 bg-gray-100 rounded-t relative" style={{ height: '80px' }}>
+                        <div
+                          className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-red-400 to-red-500 rounded-t transition-all duration-300"
+                          style={{ height: `${heightPercent}%` }}
+                        />
+                      </div>
+                      <div className="text-[10px] font-medium text-gray-700 mt-1">{room.powerKW.toFixed(1)}</div>
+                      <div className="text-[10px] text-gray-500 truncate max-w-full">{room.roomName.slice(0, 4)}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           </div>
 
           {/* Battery SOC */}
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 flex-1">
-            <h3 className="text-sm font-semibold text-gray-600 mb-4">储能状态</h3>
+            <h3 className="text-sm font-semibold text-gray-600 mb-4">
+              储能状态
+              {snapshot?.battery.bms && (
+                <span className="ml-2 text-xs">
+                  <span className={
+                    snapshot.battery.bms.balanceStatus?.some((s: boolean) => s)
+                      ? 'text-blue-500'
+                      : (snapshot.battery.powerKW || 0) > 0.1
+                      ? 'text-green-500'
+                      : (snapshot.battery.powerKW || 0) < -0.1
+                      ? 'text-orange-500'
+                      : 'text-gray-400'
+                  }>
+                    {snapshot.battery.bms.balanceStatus?.some((s: boolean) => s)
+                      ? '均衡中'
+                      : (snapshot.battery.powerKW || 0) > 0.1
+                      ? '充电中'
+                      : (snapshot.battery.powerKW || 0) < -0.1
+                      ? '放电中'
+                      : '待机'}
+                  </span>
+                  <span className="ml-2 text-gray-400">|</span>
+                  <span className={
+                    snapshot.battery.bms.sohPercent >= 95
+                      ? 'text-green-500 ml-2'
+                      : snapshot.battery.bms.sohPercent >= 85
+                      ? 'text-green-500 ml-2'
+                      : snapshot.battery.bms.sohPercent >= 70
+                      ? 'text-yellow-500 ml-2'
+                      : 'text-red-500 ml-2'
+                  }>
+                    {snapshot.battery.bms.sohPercent >= 95
+                      ? '电池很健康'
+                      : snapshot.battery.bms.sohPercent >= 85
+                      ? '状态良好'
+                      : snapshot.battery.bms.sohPercent >= 70
+                      ? '略有衰减'
+                      : '需要维护'}
+                  </span>
+                </span>
+              )}
+            </h3>
             <div className="flex justify-center items-center h-full">
               <SOCIndicator
                 socPercent={snapshot?.battery.socPercent || 0}
-                temperatureC={snapshot?.battery.temperatureC}
                 status={
                   (snapshot?.battery.powerKW || 0) > 0.1
                     ? 'charging'
@@ -91,92 +183,33 @@ export default function DashboardPage() {
                     : 'idle'
                 }
                 size="lg"
+                bms={snapshot?.battery.bms}
               />
             </div>
           </div>
         </div>
       </div>
 
-      {/* System Status Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <SystemStatusCard
-          name="光伏系统"
-          type="pv"
-          powerKW={snapshot?.pv.powerKW || 0}
-          status={snapshot?.pv.powerKW && snapshot.pv.powerKW > 0.1 ? 'running' : 'standby'}
-          details={{
-            voltage: snapshot?.pv.voltage,
-            temperature: 35,
-            efficiency: 0.18,
-          }}
-        />
-        <SystemStatusCard
-          name="储能电池"
-          type="battery"
-          powerKW={snapshot?.battery.powerKW || 0}
-          status={
-            (snapshot?.battery.powerKW || 0) > 0.1
-              ? 'running'
-              : (snapshot?.battery.powerKW || 0) < -0.1
-              ? 'running'
-              : 'standby'
-          }
-          details={{
-            temperature: snapshot?.battery.temperatureC,
-            soc: snapshot?.battery.socPercent,
-          }}
-        />
-        <SystemStatusCard
-          name="PCS转换"
-          type="pcs"
-          powerKW={snapshot?.pcs.powerKW || 0}
-          status={snapshot?.pcs.status === 'running' ? 'running' : 'standby'}
-          details={{
-            voltage: 800,
-            efficiency: snapshot?.pcs.efficiency,
-          }}
-        />
-        <SystemStatusCard
-          name="电网"
-          type="grid"
-          powerKW={snapshot?.grid.powerKW || 0}
-          status={snapshot?.grid.powerKW !== 0 ? 'running' : 'standby'}
-          details={{
-            voltage: 380,
-          }}
-        />
-      </div>
-
-      {/* Room Loads Summary */}
+      {/* 24 Hour Realtime Chart */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">房间负载</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {snapshot?.rooms.map((room) => (
-            <div
-              key={room.roomId}
-              className={`p-4 rounded-lg border ${
-                room.breakerStatus === 'closed'
-                  ? 'bg-red-50 border-red-200'
-                  : 'bg-gray-50 border-gray-200'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-700">{room.roomName}</span>
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    room.breakerStatus === 'closed' ? 'bg-green-500' : 'bg-gray-400'
-                  }`}
-                />
-              </div>
-              <div className="text-2xl font-bold text-gray-800">
-                {room.powerKW.toFixed(1)}
-                <span className="text-xs font-normal text-gray-500 ml-1">kW</span>
-              </div>
-              <div className="text-xs text-gray-500 mt-1">
-                今日: {room.energyKWh.toFixed(1)} kWh
-              </div>
-            </div>
-          ))}
+        <h3 className="text-sm font-semibold text-gray-600 mb-4">24小时实时数据</h3>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={history}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 10 }} width={35} />
+              <Tooltip
+                contentStyle={{ fontSize: 11 }}
+                labelFormatter={(label) => `时间: ${label}`}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line type="monotone" dataKey="pv" stroke="#22c55e" strokeWidth={2} dot={false} name="光伏(kW)" />
+              <Line type="monotone" dataKey="battery" stroke="#f97316" strokeWidth={2} dot={false} name="储能(kW)" />
+              <Line type="monotone" dataKey="load" stroke="#ef4444" strokeWidth={2} dot={false} name="负载(kW)" />
+              <Line type="monotone" dataKey="grid" stroke="#eab308" strokeWidth={2} dot={false} name="电网(kW)" />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       </div>
     </div>

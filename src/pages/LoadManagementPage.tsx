@@ -1,64 +1,90 @@
 // Load Management Page - Room circuit breaker control with power curves
 
-import { useState, useEffect, useRef } from 'react'
-import { SimulationEngine } from '../simulation'
+import { useState, useEffect } from 'react'
 import type { SystemSnapshot, RoomLoadSnapshot } from '../lib/types'
 import { Building2, Power, Zap, TrendingUp } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+
+const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000'
 
 export default function LoadManagementPage() {
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null)
   const [isRunning, setIsRunning] = useState(true)
   const [roomHistory, setRoomHistory] = useState<Record<string, number[]>>({})
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null)
-  const engineRef = useRef<SimulationEngine | null>(null)
 
   useEffect(() => {
-    engineRef.current = new SimulationEngine()
-    engineRef.current.onTick((newSnapshot) => {
-      setSnapshot(newSnapshot)
-      // Record room history for charts
-      const newHistory: Record<string, number[]> = {}
-      newSnapshot.rooms.forEach((room) => {
-        const existing = roomHistory[room.roomId] || []
-        const updated = [...existing, room.powerKW].slice(-60)
-        newHistory[room.roomId] = updated
-      })
-      setRoomHistory(newHistory)
-    })
-    setSnapshot(engineRef.current.getSnapshot())
+    if (!isRunning) return
 
-    return () => {
-      engineRef.current?.stop()
+    const fetchData = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/simulation`)
+        const data = await res.json()
+        setSnapshot(data)
+        // Record room history for charts
+        const newHistory: Record<string, number[]> = {}
+        data.rooms.forEach((room: RoomLoadSnapshot) => {
+          const existing = roomHistory[room.roomId] || []
+          const updated = [...existing, room.powerKW].slice(-60)
+          newHistory[room.roomId] = updated
+        })
+        setRoomHistory(newHistory)
+      } catch (err) {
+        console.error('Failed to fetch:', err)
+      }
     }
-  }, [])
 
-  useEffect(() => {
-    if (isRunning) {
-      engineRef.current?.start()
-    } else {
-      engineRef.current?.stop()
-    }
-  }, [isRunning])
+    fetchData()
+    const interval = setInterval(fetchData, 1000)
 
-  const handleToggleBreaker = (roomId: string, currentStatus: 'closed' | 'open') => {
+    return () => clearInterval(interval)
+  }, [isRunning, roomHistory])
+
+  const handleToggleBreaker = async (roomId: string, currentStatus: 'closed' | 'open') => {
     const newStatus = currentStatus === 'closed' ? 'open' : 'closed'
-    engineRef.current?.setBreakerStatus(roomId, newStatus)
-    setSnapshot(engineRef.current?.getSnapshot() || null)
+    try {
+      await fetch(`${API_BASE}/api/breaker`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, status: newStatus }),
+      })
+      // Refetch data
+      const res = await fetch(`${API_BASE}/api/simulation`)
+      const data = await res.json()
+      setSnapshot(data)
+    } catch (err) {
+      console.error('Failed to toggle breaker:', err)
+    }
   }
 
-  const handleOpenAll = () => {
-    snapshot?.rooms.forEach((room) => {
-      engineRef.current?.setBreakerStatus(room.roomId, 'open')
-    })
-    setSnapshot(engineRef.current?.getSnapshot() || null)
+  const handleOpenAll = async () => {
+    try {
+      await fetch(`${API_BASE}/api/breaker/all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'open' }),
+      })
+      const res = await fetch(`${API_BASE}/api/simulation`)
+      const data = await res.json()
+      setSnapshot(data)
+    } catch (err) {
+      console.error('Failed to open all breakers:', err)
+    }
   }
 
-  const handleCloseAll = () => {
-    snapshot?.rooms.forEach((room) => {
-      engineRef.current?.setBreakerStatus(room.roomId, 'closed')
-    })
-    setSnapshot(engineRef.current?.getSnapshot() || null)
+  const handleCloseAll = async () => {
+    try {
+      await fetch(`${API_BASE}/api/breaker/all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'closed' }),
+      })
+      const res = await fetch(`${API_BASE}/api/simulation`)
+      const data = await res.json()
+      setSnapshot(data)
+    } catch (err) {
+      console.error('Failed to close all breakers:', err)
+    }
   }
 
   const sortedRooms = [...(snapshot?.rooms || [])].sort((a, b) => b.powerKW - a.powerKW)

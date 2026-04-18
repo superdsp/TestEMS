@@ -128,6 +128,19 @@ export interface SystemSnapshot {
     socPercent: number
     powerKW: number
     temperatureC: number
+    bms: {
+      cellCount: number
+      stringCount: number
+      voltages: number[]
+      socValues: number[]
+      temps: number[]
+      balanceStatus: boolean[]
+      maxCellDeltaMV: number
+      avgVoltage: number
+      totalVoltage: number
+      sohPercent: number
+      chargeCycles: number
+    }
   }
   pcs: {
     status: 'running' | 'standby' | 'fault' | 'starting' | 'stopping'
