@@ -58,7 +58,7 @@ export default function EnergyFlowDiagram({ snapshot }: EnergyFlowDiagramProps) 
         <line x1="40" y1={busY} x2="560" y2={busY} className="bus-line" />
 
         {/* Bus Label */}
-        <text x="300" y={busY + 28} textAnchor="middle" fill="#1e3a5f" fontSize="12" fontWeight="bold">AC Bus 380V</text>
+        <text x="300" y={busY + 28} textAnchor="middle" fill="#1e3a5f" fontSize="12" fontWeight="bold">AC Bus 0.4KV</text>
 
         {/* Connection lines */}
 
