@@ -100,7 +100,7 @@ export default function EnergyFlowDiagram({ snapshot }: EnergyFlowDiagramProps) 
         <line x1="40" y1={busY} x2="560" y2={busY} stroke="#1e3a5f" strokeWidth="6" strokeLinecap="round" />
         <text x="300" y={busY + 24} textAnchor="middle" fill="#1e3a5f" fontSize="11" fontWeight="bold">AC Bus 0.4kV</text>
 
-        {/* ========== PV to Bus (Vertical) ========== */}
+{/* ========== PV to Bus (Vertical) ========== */}
         <line x1={pvX} y1={pvY1} x2={pvX} y2={pvY2} stroke={pvFlow ? "#22c55e" : "#d1d5db"} strokeWidth={pvFlow ? 4 : 2} strokeLinecap="round" />
         {pvFlow && (
           <g filter="url(#glow)">
