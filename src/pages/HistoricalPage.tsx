@@ -33,6 +33,7 @@ export default function HistoricalPage() {
   const [refAreaRight, setRefAreaRight] = useState<string>('')
   const [zoomMode, setZoomMode] = useState(false)
   const [zoomData, setZoomData] = useState<DataPoint[]>([])
+  const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set())
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -114,99 +115,98 @@ export default function HistoricalPage() {
   const displayData = zoomMode && zoomData.length > 0 ? zoomData : data
 
   return (
-    <div className="space-y-6">
+    <div className="h-screen overflow-hidden p-4 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">历史数据</h1>
-          <p className="text-sm text-gray-500 mt-1">滚动鼠标滚轮可缩放，拖拽选择区域可放大</p>
+      <div className="flex items-center justify-between mb-2 flex-shrink-0">
+        <div className="flex items-center gap-4">
+          <h1 className="text-lg font-bold text-gray-800">历史数据</h1>
+          {/* Time Range */}
+          <select
+            value={range}
+            onChange={(e) => setRange(e.target.value)}
+            className="px-3 py-1 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 shadow-sm"
+          >
+            {RANGE_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <span className="text-xs text-gray-500">点击图例切换曲线</span>
         </div>
         <div className="flex items-center gap-3">
           {/* Zoom Controls */}
           <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1">
             <button
               onClick={() => setZoomMode(!zoomMode)}
-              className={`px-3 py-1.5 rounded text-sm flex items-center gap-1 transition-colors ${
+              className={`px-2 py-1 rounded text-xs flex items-center gap-1 transition-colors ${
                 zoomMode ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 text-gray-700'
               }`}
             >
-              <ZoomIn className="w-4 h-4" />
-              {zoomMode ? '退出缩放' : '缩放'}
+              <ZoomIn className="w-3 h-3" />
+              {zoomMode ? '退出' : '缩放'}
             </button>
             <button
               onClick={handleZoomOut}
-              className="px-3 py-1.5 rounded text-sm flex items-center gap-1 hover:bg-gray-100 text-gray-700 transition-colors"
+              className="px-2 py-1 rounded text-xs flex items-center gap-1 hover:bg-gray-100 text-gray-700 transition-colors"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="w-3 h-3" />
               重置
             </button>
           </div>
-
-          {/* Time Range */}
-          <select
-            value={range}
-            onChange={(e) => setRange(e.target.value)}
-            className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 shadow-sm"
-          >
-            {RANGE_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-          <p className="text-sm text-gray-500">光伏发电量</p>
-          <p className="text-2xl font-bold text-green-600 mt-1">
-            {totals.pv.toFixed(1)} <span className="text-sm font-normal text-gray-500">kWh</span>
+      <div className="grid grid-cols-4 gap-2 mb-2 flex-shrink-0">
+        <div className="bg-white rounded-lg p-2 shadow-sm border border-gray-200">
+          <p className="text-xs text-gray-500">光伏</p>
+          <p className="text-lg font-bold text-green-600">
+            {totals.pv.toFixed(1)} <span className="text-xs font-normal text-gray-500">kWh</span>
           </p>
         </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-          <p className="text-sm text-gray-500">总用电量</p>
-          <p className="text-2xl font-bold text-red-600 mt-1">
-            {totals.load.toFixed(1)} <span className="text-sm font-normal text-gray-500">kWh</span>
+        <div className="bg-white rounded-lg p-2 shadow-sm border border-gray-200">
+          <p className="text-xs text-gray-500">负载</p>
+          <p className="text-lg font-bold text-red-600">
+            {totals.load.toFixed(1)} <span className="text-xs font-normal text-gray-500">kWh</span>
           </p>
         </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-          <p className="text-sm text-gray-500">电网用电量</p>
-          <p className="text-2xl font-bold text-yellow-600 mt-1">
-            {totals.grid.toFixed(1)} <span className="text-sm font-normal text-gray-500">kWh</span>
+        <div className="bg-white rounded-lg p-2 shadow-sm border border-gray-200">
+          <p className="text-xs text-gray-500">电网</p>
+          <p className="text-lg font-bold text-yellow-600">
+            {totals.grid.toFixed(1)} <span className="text-xs font-normal text-gray-500">kWh</span>
           </p>
         </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-          <p className="text-sm text-gray-500">自发自用率</p>
-          <p className="text-2xl font-bold text-blue-600 mt-1">
-            {selfSufficiency} <span className="text-sm font-normal text-gray-500">%</span>
+        <div className="bg-white rounded-lg p-2 shadow-sm border border-gray-200">
+          <p className="text-xs text-gray-500">自用率</p>
+          <p className="text-lg font-bold text-blue-600">
+            {selfSufficiency} <span className="text-xs font-normal text-gray-500">%</span>
           </p>
         </div>
       </div>
 
       {/* Main Chart */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <BarChart3 className="w-5 h-5 text-blue-600" />
-            <h2 className="font-semibold text-gray-800">功率曲线 {zoomMode && zoomData.length > 0 && `(${zoomData.length} 个数据点)`}</h2>
+      <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-200 flex-1 min-h-0 flex flex-col">
+        <div className="flex items-center justify-between mb-1 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-blue-600" />
+            <h2 className="text-sm font-semibold text-gray-800">功率曲线 {zoomMode && zoomData.length > 0 && `(${zoomData.length}点)`}</h2>
           </div>
           {zoomMode && (
-            <span className="text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
-              点击并拖拽选择区域进行放大
+            <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+              拖拽放大
             </span>
           )}
         </div>
 
         {loading ? (
-          <div className="h-80 flex items-center justify-center text-gray-400">
+          <div className="flex-1 flex items-center justify-center text-gray-400">
             加载中...
           </div>
         ) : displayData.length === 0 ? (
-          <div className="h-80 flex items-center justify-center text-gray-400">
+          <div className="flex-1 flex items-center justify-center text-gray-400">
             暂无数据
           </div>
         ) : (
-          <div className="h-80">
+          <div className="flex-1 min-h-0">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={displayData}
@@ -222,7 +222,7 @@ export default function HistoricalPage() {
                   interval="preserveStartEnd"
                   minTickGap={50}
                 />
-                <YAxis stroke="#6b7280" fontSize={12} />
+                <YAxis stroke="#6b7280" fontSize={12} domain={['auto', 'auto']} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: '#ffffff',
@@ -231,11 +231,19 @@ export default function HistoricalPage() {
                   }}
                   labelFormatter={(label) => `时间: ${label}`}
                 />
-                <Legend />
-                <Line type="monotone" dataKey="pv" stroke="#22c55e" strokeWidth={2} dot={false} name="光伏 (kW)" />
-                <Line type="monotone" dataKey="battery" stroke="#f59e0b" strokeWidth={2} dot={false} name="储能 (kW)" />
-                <Line type="monotone" dataKey="load" stroke="#ef4444" strokeWidth={2} dot={false} name="负载 (kW)" />
-                <Line type="monotone" dataKey="grid" stroke="#eab308" strokeWidth={2} dot={false} name="电网 (kW)" />
+                <Legend onClick={(e) => {
+                  const dataKey = e.dataKey as string
+                  setHiddenLines(prev => {
+                    const next = new Set(prev)
+                    if (next.has(dataKey)) next.delete(dataKey)
+                    else next.add(dataKey)
+                    return next
+                  })
+                }} />
+                <Line type="monotone" dataKey="pv" stroke="#22c55e" strokeWidth={2} dot={false} name="光伏 (kW)" hide={hiddenLines.has('pv')} />
+                <Line type="monotone" dataKey="battery" stroke="#f59e0b" strokeWidth={2} dot={false} name="储能 (kW)" hide={hiddenLines.has('battery')} />
+                <Line type="monotone" dataKey="load" stroke="#ef4444" strokeWidth={2} dot={false} name="负载 (kW)" hide={hiddenLines.has('load')} />
+                <Line type="monotone" dataKey="grid" stroke="#eab308" strokeWidth={2} dot={false} name="电网 (kW)" hide={hiddenLines.has('grid')} />
                 {refAreaLeft && refAreaRight && (
                   <ReferenceArea
                     x1={refAreaLeft}
@@ -257,11 +265,9 @@ export default function HistoricalPage() {
             </ResponsiveContainer>
           </div>
         )}
-      </div>
 
-      {/* Data Info */}
-      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-        <div className="flex items-center justify-between text-sm text-gray-500">
+        {/* Data Info */}
+        <div className="flex items-center justify-between text-sm text-gray-500 mt-2 flex-shrink-0">
           <span>共 {data.length} 个数据点</span>
           <span>时间范围: {data.length > 0 ? `${data[0].time} 至 ${data[data.length - 1].time}` : '无数据'}</span>
         </div>

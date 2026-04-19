@@ -21,6 +21,7 @@ interface DataPoint {
 export default function DashboardPage() {
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null)
   const [chartData, setChartData] = useState<DataPoint[]>([])
+  const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set())
   const lastFetchRef = { current: 0 }
 
   useEffect(() => {
@@ -83,140 +84,69 @@ export default function DashboardPage() {
   }, [])
 
   return (
-    <div className="space-y-6">
+    <div className="h-screen overflow-hidden p-2 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">
-            能源管理仪表盘
-            {snapshot?.simTime && (
-              <span className="text-green-600 ml-2">第{snapshot.simTime.day}天 {snapshot.simTime.hour}时</span>
-            )}
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">实时监控光伏、储能、负载运行状态</p>
-        </div>
+      <div className="flex items-center justify-between mb-2 flex-shrink-0">
+        <h1 className="text-lg font-bold text-gray-800">
+          能源管理仪表盘
+          {snapshot?.simTime && (
+            <span className="text-green-600 ml-2">第{snapshot.simTime.day}天 {snapshot.simTime.hour}时</span>
+          )}
+        </h1>
       </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Energy Flow Diagram */}
-        <div className="lg:col-span-2 h-full">
+      {/* Top Half - Energy Flow + Right Panel */}
+      <div className="flex gap-2">
+        {/* Left 2/3 - Energy Flow Diagram */}
+        <div className="w-[66%] max-h-[50vh] overflow-hidden">
           <EnergyFlowDiagram snapshot={snapshot} />
         </div>
 
-        {/* Right Column - Summary Gauges */}
-        <div className="flex flex-col gap-6 h-full">
-          {/* Quick Stats */}
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 flex-1">
-            <h3 className="text-sm font-semibold text-gray-600 mb-4">功率概览</h3>
-            <div className="flex justify-around items-center">
-              <PowerGauge
-                value={snapshot?.pv.powerKW || 0}
-                maxValue={10}
-                label="光伏"
-                color="#22c55e"
-                size="md"
-              />
-              <PowerGauge
-                value={snapshot?.balance.gridPowerKW || 0}
-                maxValue={20}
-                label="电网"
-                color="#eab308"
-                size="md"
-              />
-              <PowerGauge
-                value={snapshot?.balance.totalLoadKW || 0}
-                maxValue={20}
-                label="负载"
-                color="#ef4444"
-                size="md"
-              />
-            </div>
-
-            {/* Room Power Bars */}
-            <div className="border-t border-gray-200 pt-4 mt-4">
-              <h4 className="text-xs font-medium text-gray-500 mb-3">房间负载</h4>
-              <div className="flex items-end justify-between gap-1">
-                {snapshot?.rooms?.slice(0, 6).map((room) => {
-                  const maxRoomPower = 8
-                  const heightPercent = Math.min(100, (room.powerKW / maxRoomPower) * 100)
-                  return (
-                    <div key={room.roomId} className="flex flex-col items-center flex-1 min-w-0">
-                      <div className="w-5 bg-gray-100 rounded-t relative" style={{ height: '80px' }}>
-                        <div
-                          className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-red-400 to-red-500 rounded-t transition-all duration-300"
-                          style={{ height: `${heightPercent}%` }}
-                        />
-                      </div>
-                      <div className="text-[10px] font-medium text-gray-700 mt-1">{room.powerKW.toFixed(1)}</div>
-                      <div className="text-[10px] text-gray-500 truncate max-w-full">{room.roomName.slice(0, 4)}</div>
-                    </div>
-                  )
-                })}
-              </div>
+        {/* Right 1/3 - Top: Power+Room merged, Bottom: Battery */}
+        <div className="w-[34%] max-h-[50vh] flex flex-col gap-2 overflow-hidden">
+          <div className="flex-1 bg-white rounded-xl p-3 shadow-sm border border-gray-200 overflow-hidden">
+            <h3 className="text-xs font-semibold text-gray-600 mb-2">功率概览</h3>
+            <div className="flex justify-around items-center" style={{ marginTop: '8%' }}>
+              <PowerGauge value={snapshot?.pv.powerKW || 0} maxValue={10} label="光伏" color="#22c55e" size="lg" />
+              <PowerGauge value={snapshot?.balance.gridPowerKW || 0} maxValue={20} label="电网" color="#eab308" size="lg" />
+              <PowerGauge value={snapshot?.balance.totalLoadKW || 0} maxValue={20} label="负载" color="#ef4444" size="lg" />
             </div>
           </div>
 
-          {/* Battery SOC */}
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 flex-1">
-            <h3 className="text-sm font-semibold text-gray-600 mb-4">
-              储能状态
-              {snapshot?.battery.bms && (
-                <span className="ml-2 text-xs">
-                  <span className={
-                    snapshot.battery.bms.balanceStatus?.some((s: boolean) => s)
-                      ? 'text-blue-500'
-                      : (snapshot.battery.powerKW || 0) > 0.1
-                      ? 'text-green-500'
-                      : (snapshot.battery.powerKW || 0) < -0.1
-                      ? 'text-orange-500'
-                      : 'text-gray-400'
-                  }>
-                    {snapshot.battery.bms.balanceStatus?.some((s: boolean) => s)
-                      ? '均衡中'
-                      : (snapshot.battery.powerKW || 0) > 0.1
-                      ? '充电中'
-                      : (snapshot.battery.powerKW || 0) < -0.1
-                      ? '放电中'
-                      : '待机'}
-                  </span>
-                </span>
-              )}
+          <div className="flex-1 bg-white rounded-xl p-3 shadow-sm border border-gray-200 overflow-hidden">
+            <h3 className="text-xs font-semibold text-gray-600 mb-2">
+              储能 {(snapshot?.battery.powerKW || 0) > 0.1 ? '充电' : (snapshot?.battery.powerKW || 0) < -0.1 ? '放电' : '待机'}
             </h3>
-            <SOCIndicator
-              socPercent={snapshot?.battery.socPercent || 0}
-              bms={snapshot?.battery.bms}
-            />
+            <div className="h-[calc(100%-24px)]">
+              <SOCIndicator socPercent={snapshot?.battery.socPercent || 0} bms={snapshot?.battery.bms} />
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Power Chart */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <h3 className="text-sm font-semibold text-gray-600 mb-4">24小时功率曲线</h3>
-        <div className="h-64">
+      {/* Bottom Half - Power Chart (full width) */}
+      <div className="bg-white rounded-xl p-2 shadow-sm border border-gray-200 mt-2" style={{ height: 'calc(40vh)' }}>
+        <h3 className="text-xs font-semibold text-gray-600 mb-1">24小时功率曲线</h3>
+        <div className="h-[calc(100%-20px)]">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis
-                dataKey="time"
-                stroke="#6b7280"
-                fontSize={12}
-                tickLine={false}
-              />
-              <YAxis stroke="#6b7280" fontSize={12} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                }}
-              />
-              <Legend />
-              <Line type="monotone" dataKey="pv" name="光伏(kW)" stroke="#22c55e" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="battery" name="储能(kW)" stroke="#f59e0b" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="load" name="负载(kW)" stroke="#ef4444" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="grid" name="电网(kW)" stroke="#eab308" strokeWidth={2} dot={false} />
+              <XAxis dataKey="time" stroke="#6b7280" fontSize={9} interval="preserveStartEnd" minTickGap={30} />
+              <YAxis stroke="#6b7280" fontSize={9} width={25} domain={['auto', 'auto']} />
+              <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: 10 }} />
+              <Legend wrapperStyle={{ fontSize: 9 }} onClick={(e) => {
+                const dataKey = e.dataKey as string
+                setHiddenLines(prev => {
+                  const next = new Set(prev)
+                  if (next.has(dataKey)) next.delete(dataKey)
+                  else next.add(dataKey)
+                  return next
+                })
+              }} />
+              <Line type="monotone" dataKey="pv" name="光伏" stroke="#22c55e" strokeWidth={1.5} dot={false} hide={hiddenLines.has('pv')} />
+              <Line type="monotone" dataKey="battery" name="储能" stroke="#f59e0b" strokeWidth={1.5} dot={false} hide={hiddenLines.has('battery')} />
+              <Line type="monotone" dataKey="load" name="负载" stroke="#ef4444" strokeWidth={1.5} dot={false} hide={hiddenLines.has('load')} />
+              <Line type="monotone" dataKey="grid" name="电网" stroke="#eab308" strokeWidth={1.5} dot={false} hide={hiddenLines.has('grid')} />
             </LineChart>
           </ResponsiveContainer>
         </div>

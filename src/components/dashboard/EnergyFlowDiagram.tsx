@@ -82,10 +82,10 @@ export default function EnergyFlowDiagram({ snapshot }: EnergyFlowDiagramProps) 
   }
 
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-      <h2 className="text-lg font-semibold text-gray-800 mb-6">能量流向图</h2>
+    <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-200 h-full flex flex-col">
+      <h2 className="text-sm font-semibold text-gray-800 mb-2">能量流向图</h2>
 
-      <svg viewBox="0 0 600 280" className="w-full h-auto">
+      <svg viewBox="0 0 600 280" className="w-full flex-1">
         <defs>
           <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
             <feGaussianBlur stdDeviation="2" result="blur" />
@@ -98,7 +98,7 @@ export default function EnergyFlowDiagram({ snapshot }: EnergyFlowDiagramProps) 
 
         {/* AC Bus Line */}
         <line x1="40" y1={busY} x2="560" y2={busY} stroke="#1e3a5f" strokeWidth="6" strokeLinecap="round" />
-        <text x="300" y={busY + 24} textAnchor="middle" fill="#1e3a5f" fontSize="11" fontWeight="bold">AC Bus 380V</text>
+        <text x="300" y={busY + 24} textAnchor="middle" fill="#1e3a5f" fontSize="11" fontWeight="bold">AC Bus 0.4kV</text>
 
         {/* ========== PV to Bus (Vertical) ========== */}
         <line x1={pvX} y1={pvY1} x2={pvX} y2={pvY2} stroke={pvFlow ? "#22c55e" : "#d1d5db"} strokeWidth={pvFlow ? 4 : 2} strokeLinecap="round" />
